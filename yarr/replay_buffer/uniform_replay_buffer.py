@@ -415,7 +415,7 @@ class UniformReplayBuffer(ReplayBuffer):
                 arg_shape = tuple()
             store_element_shape = tuple(store_element.shape)
             if arg_shape != store_element_shape:
-                raise ValueError('arg has shape {}, expected {}'.format(
+                raise ValueError('arg {} has shape {}, expected {}'.format(store_element.name,
                     arg_shape, store_element_shape))
 
     def is_empty(self):
