@@ -18,13 +18,54 @@ from yarr.utils.observation_type import ObservationElement
 from yarr.utils.transition import Transition
 from yarr.utils.process_str import change_case
 
-from absl import logging
+import logging
 
 
 ROBOT_STATE_KEYS = ['joint_velocities', 'joint_positions', 'joint_forces',
                         'gripper_open', 'gripper_pose',
                         'gripper_joint_positions', 'gripper_touch_forces',
                         'task_low_dim_state', 'misc', 'left', 'right']
+
+
+
+def _extract_obs_bimanual(obs: BimanualObservation, channels_last: bool, observation_config):
+    obs_dict = vars(obs)
+    obs_dict = {k: v for k, v in obs_dict.items() if v is not None}
+
+    right_robot_state = obs.get_low_dim_data(obs.right)
+    left_robot_state = obs.get_low_dim_data(obs.left)
+
+    obs_dict = {k: v for k, v in obs_dict.items()
+            if k not in ROBOT_STATE_KEYS}
+
+    if not channels_last:
+        # Swap channels from last dim to 1st dim
+        obs_dict = {k: np.transpose(
+            v, [2, 0, 1]) if v.ndim == 3 else np.expand_dims(v, 0)
+                    for k, v in obs_dict.items()}
+    else:
+        # Add extra dim to depth data
+        obs_dict = {k: v if v.ndim == 3 else np.expand_dims(v, -1)
+                    for k, v in obs_dict.items()}
+
+    obs_dict['right_low_dim_state'] = right_robot_state.astype(np.float32)
+    obs_dict['left_low_dim_state'] = left_robot_state.astype(np.float32)
+    obs_dict['right_ignore_collisions'] = np.array([obs.right.ignore_collisions], dtype=np.float32)
+    obs_dict['left_ignore_collisions'] = np.array([obs.left.ignore_collisions], dtype=np.float32)
+
+    for (k, v) in [(k, v) for k, v in obs_dict.items() if 'point_cloud' in k]:
+        obs_dict[k] = v.astype(np.float32)
+
+    for config, name in [
+        (observation_config.left_shoulder_camera, 'left_shoulder'),
+        (observation_config.right_shoulder_camera, 'right_shoulder'),
+        (observation_config.front_camera, 'front'),
+        (observation_config.wrist_camera, 'wrist'),
+        (observation_config.overhead_camera, 'overhead')]:
+        if config.point_cloud:
+            obs_dict['%s_camera_extrinsics' % name] = obs.misc['%s_camera_extrinsics' % name]
+            obs_dict['%s_camera_intrinsics' % name] = obs.misc['%s_camera_intrinsics' % name]
+    
 
 def _extract_obs_unimanual(obs: Observation, channels_last: bool, observation_config):
     obs_dict = vars(obs)
@@ -144,64 +185,12 @@ class RLBenchEnv(Env):
 
     def extract_obs(self, obs: Observation):
         if isinstance(obs, BimanualObservation):
-            return self.extract_obs_bimanual(obs)
+            extracted_obs = _extract_obs_bimanual(obs, self._channels_last, self._observation_config)
         else:
-            return self.extract_obs_unimanual(obs)
-
-    def extract_obs_unimanual(self, obs: Observation):
-        extracted_obs = _extract_obs_unimanual(obs, self._channels_last, self._observation_config)
+            extracted_obs = _extract_obs_unimanual(obs, self._channels_last, self._observation_config)
         if self._include_lang_goal_in_obs:
             extracted_obs['lang_goal_tokens'] = tokenize([self._lang_goal])[0].numpy()
         return extracted_obs
-
-
-    def extract_obs_bimanual(self, obs: Observation):
-        channels_last = self._channels_last
-        observation_config = self._observation_config
-
-        obs_dict = vars(obs)
-        obs_dict = {k: v for k, v in obs_dict.items() if v is not None}
-
-        right_robot_state = obs.get_low_dim_data(obs.right)
-        left_robot_state = obs.get_low_dim_data(obs.left)
-
-        obs_dict = {k: v for k, v in obs_dict.items()
-                if k not in ROBOT_STATE_KEYS}
-        if not channels_last:
-            # Swap channels from last dim to 1st dim
-            obs_dict = {k: np.transpose(
-                v, [2, 0, 1]) if v.ndim == 3 else np.expand_dims(v, 0)
-                        for k, v in obs_dict.items()}
-        else:
-            # Add extra dim to depth data
-            obs_dict = {k: v if v.ndim == 3 else np.expand_dims(v, -1)
-                        for k, v in obs_dict.items()}
-
-
-        obs_dict['right_low_dim_state'] = right_robot_state.astype(np.float32)
-        obs_dict['left_low_dim_state'] = left_robot_state.astype(np.float32)
-        obs_dict['right_ignore_collisions'] = np.array([obs.right.ignore_collisions], dtype=np.float32)
-        obs_dict['left_ignore_collisions'] = np.array([obs.left.ignore_collisions], dtype=np.float32)
-
-        for (k, v) in [(k, v) for k, v in obs_dict.items() if 'point_cloud' in k]:
-            obs_dict[k] = v.astype(np.float32)
-
-        for config, name in [
-            (observation_config.left_shoulder_camera, 'left_shoulder'),
-            (observation_config.right_shoulder_camera, 'right_shoulder'),
-            (observation_config.front_camera, 'front'),
-            (observation_config.wrist_camera, 'wrist'),
-            (observation_config.overhead_camera, 'overhead')]:
-            if config.point_cloud:
-                obs_dict['%s_camera_extrinsics' % name] = obs.misc['%s_camera_extrinsics' % name]
-                obs_dict['%s_camera_intrinsics' % name] = obs.misc['%s_camera_intrinsics' % name]
-        
-        extracted_obs = obs_dict
-        # ..todo extract obs
-        if self._include_lang_goal_in_obs:
-            extracted_obs['lang_goal_tokens'] = tokenize([self._lang_goal])[0].numpy()
-        return extracted_obs
-    
 
     def launch(self):
         self._rlbench_env.launch()
@@ -252,7 +241,7 @@ class MultiTaskRLBenchEnv(MultiTaskEnv):
         self._include_lang_goal_in_obs = include_lang_goal_in_obs
         self._rlbench_env = Environment(
             action_mode=action_mode, obs_config=observation_config,
-            dataset_root=dataset_root, headless=headless)
+            dataset_root=dataset_root, headless=headless, robot_setup="dual_panda")
         self._task = None
         self._task_name = ''
         self._lang_goal = 'unknown goal'
@@ -281,15 +270,9 @@ class MultiTaskRLBenchEnv(MultiTaskEnv):
 
     def extract_obs(self, obs: Observation):
         if obs.is_bimanual:
-            return self.extract_obs_bimanual(obs)
+            extracted_obs = _extract_obs_bimanual(obs, self._channels_last, self._observation_config)
         else:
-            return self.extract_obs_unimanual(obs)
-
-    def extract_obs_bimanual(self, obs: Observation):
-        logging.warning("not implemented yet.")
-
-    def extract_obs_unimanual(self, obs: Observation):
-        extracted_obs = _extract_obs_unimanual(obs, self._channels_last, self._observation_config)
+            extracted_obs = _extract_obs_unimanual(obs, self._channels_last, self._observation_config)
         if self._include_lang_goal_in_obs:
             extracted_obs['lang_goal_tokens'] = tokenize([self._lang_goal])[0].numpy()
         return extracted_obs
