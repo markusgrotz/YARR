@@ -65,6 +65,7 @@ def _extract_obs_bimanual(obs: BimanualObservation, channels_last: bool, observa
         if config.point_cloud:
             obs_dict['%s_camera_extrinsics' % name] = obs.misc['%s_camera_extrinsics' % name]
             obs_dict['%s_camera_intrinsics' % name] = obs.misc['%s_camera_intrinsics' % name]
+    return obs_dict
     
 
 def _extract_obs_unimanual(obs: Observation, channels_last: bool, observation_config):
