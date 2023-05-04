@@ -10,8 +10,9 @@ except (ModuleNotFoundError, ImportError) as e:
 from rlbench.action_modes.action_mode import ActionMode
 from rlbench.backend.observation import BimanualObservation, Observation
 from rlbench.backend.task import Task
+from rlbench.backend.task import BimanualTask
 
-from clip import tokenize
+from helpers.clip.core.clip import tokenize
 
 from yarr.envs.env import Env, MultiTaskEnv
 from yarr.utils.observation_type import ObservationElement
@@ -47,11 +48,18 @@ def _extract_obs_bimanual(obs: BimanualObservation, channels_last: bool, observa
         # Add extra dim to depth data
         obs_dict = {k: v if v.ndim == 3 else np.expand_dims(v, -1)
                     for k, v in obs_dict.items()}
-
-    obs_dict['right_low_dim_state'] = right_robot_state.astype(np.float32)
-    obs_dict['left_low_dim_state'] = left_robot_state.astype(np.float32)
-    obs_dict['right_ignore_collisions'] = np.array([obs.right.ignore_collisions], dtype=np.float32)
-    obs_dict['left_ignore_collisions'] = np.array([obs.left.ignore_collisions], dtype=np.float32)
+        
+    if observation_config.robot_name == 'right':
+        obs_dict['low_dim_state'] = right_robot_state.astype(np.float32)
+        obs_dict['ignore_collisions'] = np.array([obs.right.ignore_collisions], dtype=np.float32)
+    elif observation_config.robot_name == 'left':
+        obs_dict['low_dim_state'] = left_robot_state.astype(np.float32)
+        obs_dict['ignore_collisions'] = np.array([obs.left.ignore_collisions], dtype=np.float32)
+    else:
+        obs_dict['right_low_dim_state'] = right_robot_state.astype(np.float32)
+        obs_dict['left_low_dim_state'] = left_robot_state.astype(np.float32)
+        obs_dict['right_ignore_collisions'] = np.array([obs.right.ignore_collisions], dtype=np.float32)
+        obs_dict['left_ignore_collisions'] = np.array([obs.left.ignore_collisions], dtype=np.float32)
 
     for (k, v) in [(k, v) for k, v in obs_dict.items() if 'point_cloud' in k]:
         obs_dict[k] = v.astype(np.float32)
@@ -118,7 +126,7 @@ def _get_cam_observation_elements(camera: CameraConfig, prefix: str, channels_la
             ObservationElement('%s_camera_intrinsics' % prefix, (3, 3),
                                np.float32))
     if camera.depth:
-        shape = img_s + [1] if schannels_last else [1] + img_s
+        shape = img_s + [1] if channels_last else [1] + img_s
         elements.append(
             ObservationElement('%s_depth' % prefix, shape, np.float32))
     if camera.mask:
@@ -147,10 +155,13 @@ def _observation_elements(observation_config, channels_last) -> List[Observation
     if observation_config.task_low_dim_state:
         raise NotImplementedError()
     if robot_state_len > 0:
-        elements.append(ObservationElement(
-            'right_low_dim_state', (robot_state_len,), np.float32))
-        elements.append(ObservationElement(
-            'left_low_dim_state', (robot_state_len,), np.float32)) 
+        if observation_config.robot_name == 'bimanual':
+            elements.append(ObservationElement(
+                'right_low_dim_state', (robot_state_len,), np.float32))
+            elements.append(ObservationElement(
+                'left_low_dim_state', (robot_state_len,), np.float32))
+        elif observation_config.robot_name in ['unimanual', 'left', 'right']:            
+            elements.append(ObservationElement('low_dim_state', (robot_state_len,), np.float32))
     elements.extend(_get_cam_observation_elements(
         observation_config.left_shoulder_camera, 'left_shoulder', channels_last))
     elements.extend(_get_cam_observation_elements(
@@ -176,10 +187,13 @@ class RLBenchEnv(Env):
         self._observation_config = observation_config
         self._channels_last = channels_last
         self._include_lang_goal_in_obs = include_lang_goal_in_obs
-        logging.warning("Using dual panda")
+        if issubclass(task_class, BimanualTask):
+            robot_setup = "dual_panda"
+        else:
+            robot_setup = "panda"
         self._rlbench_env = Environment(
             action_mode=action_mode, obs_config=observation_config,
-            dataset_root=dataset_root, headless=headless, robot_setup="dual_panda")
+            dataset_root=dataset_root, headless=headless, robot_setup=robot_setup)
         self._task = None
         self._lang_goal = 'unknown goal'
 
@@ -240,9 +254,13 @@ class MultiTaskRLBenchEnv(MultiTaskEnv):
         self._observation_config = observation_config
         self._channels_last = channels_last
         self._include_lang_goal_in_obs = include_lang_goal_in_obs
+        if issubclass(task_classes[0], BimanualTask):
+            robot_setup = "dual_panda"
+        else:
+            robot_setup = "panda"
         self._rlbench_env = Environment(
             action_mode=action_mode, obs_config=observation_config,
-            dataset_root=dataset_root, headless=headless, robot_setup="dual_panda")
+            dataset_root=dataset_root, headless=headless, robot_setup=robot_setup)
         self._task = None
         self._task_name = ''
         self._lang_goal = 'unknown goal'
