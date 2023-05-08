@@ -41,6 +41,17 @@ class TaskUniformReplayBuffer(UniformReplayBuffer):
                 term[cursor] = kwargs[TERMINAL]
                 self._store[TERMINAL] = term
 
+
+                ## reduce size
+                for k, v in kwargs.items():
+                    try:
+                        if 'float' in v.dtype.name and v.size > 100:
+                            v = v.astype(np.float16)
+                            kwargs[k] = v
+                    except:
+                        pass
+
+
                 with open(join(self._save_dir, '%d.replay' % cursor), 'wb') as f:
                     pickle.dump(kwargs, f)
                 # If first add, then pad for correct wrapping
