@@ -2,27 +2,18 @@ import copy
 import logging
 import os
 import shutil
-import signal
-import sys
-import threading
 import time
-from typing import Optional, List
+from typing import List
 from typing import Union
 
-from omegaconf import DictConfig
-import gc
-import numpy as np
 import psutil
 import torch
 import pandas as pd
 from yarr.agents.agent import Agent
 from yarr.replay_buffer.wrappers.pytorch_replay_buffer import \
     PyTorchReplayBuffer
-from yarr.runners.env_runner import EnvRunner
-from yarr.runners.train_runner import TrainRunner
 from yarr.utils.log_writer import LogWriter
 from yarr.utils.stat_accumulator import StatAccumulator
-from yarr.replay_buffer.prioritized_replay_buffer import PrioritizedReplayBuffer
 
 
 class OfflineTrainRunner():
@@ -89,7 +80,7 @@ class OfflineTrainRunner():
 
     def _step(self, i, sampled_batch):
         update_dict = self._agent.update(i, sampled_batch)
-        total_losses = update_dict['total_losses'].item()
+        total_losses = update_dict['total_losses']
         return total_losses
 
     def _get_resume_eval_epoch(self):
@@ -110,7 +101,7 @@ class OfflineTrainRunner():
         if self._weightsdir is not None:
             existing_weights = sorted([int(f) for f in os.listdir(self._weightsdir)])
             if (not self._load_existing_weights) or len(existing_weights) == 0:
-                self._save_model(0)
+                # self._save_model(0)
                 start_iter = 0
             else:
                 resume_iteration = existing_weights[-1]
