@@ -143,3 +143,119 @@ class BimanualAgent(Agent):
 
     def save_weights(self, savedir: str) -> None:
         raise Exception("not implemented")
+
+class LeaderFollowerAgent(Agent):
+
+    def __init__(self, leader_agent: Agent, follower_agent: Agent):
+        self.leader_agent = leader_agent
+        self.follower_agent = follower_agent
+
+    def build(self, training: bool, device=None) -> None:
+        self.leader_agent.build(training, device)
+        self.follower_agent.build(training, device)
+
+    def update(self, step: int, replay_sample: dict) -> dict:
+
+        leader_observation = {}
+        follower_observation = {}
+
+
+        for k, v in replay_sample.items(): 
+            if "rgb" in k or "point_cloud" in k or "camera" in k:
+                leader_observation[k] = v
+                follower_observation[k] = v
+            elif "right_" in k :
+                leader_observation[k[6:]] = v
+            elif "left_" in k:
+                follower_observation[k[5:]] = v
+            else:
+                leader_observation[k] = v
+                follower_observation[k] = v
+
+        leader_update_dict = self.leader_agent.update(step, leader_observation)
+        import torch
+        follower_observation['low_dim_state'] = torch.cat([follower_observation['low_dim_state'],
+                                                           replay_sample["right_trans_action_indicies"], 
+                                                           replay_sample["right_rot_grip_action_indicies"], 
+                                                           replay_sample["right_ignore_collisions"]], dim=-1)
+
+        follower_update_dict = self.follower_agent.update(step, follower_observation)
+
+        total_losses = leader_update_dict["total_losses"] + follower_update_dict["total_losses"]
+        leader_update_dict["total_losses"] = total_losses
+        return leader_update_dict
+ 
+    def act(self, step: int, observation: dict, deterministic: bool) -> ActResult:
+
+        observation_elements = {}
+        info = {}
+
+        leader_observation = {}
+        follower_observation = {}
+
+        for k,v in observation.items():
+            if "right_" in k and not "rgb" in k and not "point_cloud" in k and not "camera" in k:
+                leader_observation[k[6:]] = v
+            elif "left_" in k and not "rgb" in k and not "point_cloud" in k and not "camera" in k:
+                follower_observation[k[5:]] = v
+            else:
+                leader_observation[k] = v
+                follower_observation[k] = v
+
+        right_act_result = self.leader_agent.act(step, leader_observation, deterministic)
+
+        right_observation_elements = right_act_result.observation_elements
+
+        import torch
+
+        device = follower_observation['low_dim_state'].device
+        if "trans_action_indicies" in right_observation_elements:
+            right_trans_action_indicies = torch.from_numpy(right_observation_elements["trans_action_indicies"]).unsqueeze(0).unsqueeze(0).to(device)
+            right_rot_grip_action_indicies = torch.from_numpy(right_observation_elements["rot_grip_action_indicies"]).unsqueeze(0).unsqueeze(0).to(device)
+            right_ignore_collisions = torch.from_numpy(right_act_result.action[-1:]).unsqueeze(0).unsqueeze(0).to(device)
+        else:
+            right_trans_action_indicies = torch.empty((1, 1, 3)).to(device)
+            right_rot_grip_action_indicies = torch.empty((1, 1, 4)).to(device)
+            right_ignore_collisions = torch.empty((1, 1, 1)).to(device)
+ 
+
+        follower_observation['low_dim_state'] = torch.cat([follower_observation['low_dim_state'],
+                                                           right_trans_action_indicies,
+                                                           right_rot_grip_action_indicies,
+                                                           right_ignore_collisions], dim=-1)  
+        
+        left_act_result = self.follower_agent.act(step, follower_observation, deterministic)
+
+        action = (*right_act_result.action, *left_act_result.action)
+        
+        observation_elements.update(right_act_result.observation_elements)
+        observation_elements.update(left_act_result.observation_elements)
+
+        info.update(right_act_result.info)
+        info.update(left_act_result.info)
+
+        return ActResult(action, observation_elements=observation_elements, info=info)
+    
+
+    def reset(self) -> None:
+        self.leader_agent.reset()
+        self.follower_agent.reset()
+
+    def update_summaries(self) -> List[Summary]:
+        return self.leader_agent.update_summaries() + self.follower_agent.update_summaries()
+
+    def act_summaries(self) -> List[Summary]:
+        return self.leader_agent.act_summaries() + self.follower_agent.act_summaries()
+
+    def load_weights(self, savedir: str) -> None:
+        self.leader_agent.load_weights(savedir.replace("%ROBOT_NAME%", "leader"))
+        self.follower_agent.load_weights(savedir.replace("%ROBOT_NAME%", "follower"))
+
+    def save_weights(self, savedir: str) -> None:
+        import os
+        os.makedirs(savedir.replace("%ROBOT_NAME%", "leader"), exist_ok=True)
+        os.makedirs(savedir.replace("%ROBOT_NAME%", "follower"), exist_ok=True)
+        self.leader_agent.save_weights(savedir.replace("%ROBOT_NAME%", "leader"))
+ 
+        self.follower_agent.save_weights(savedir.replace("%ROBOT_NAME%", "follower"))
+
