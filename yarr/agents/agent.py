@@ -92,7 +92,34 @@ class BimanualAgent(Agent):
         self.left_agent.build(training, device)
 
     def update(self, step: int, replay_sample: dict) -> dict:
-        raise Exception("not implemented")
+        right_observation = {}
+        left_observation = {}
+
+        for k, v in replay_sample.items(): 
+            if "rgb" in k or "point_cloud" in k or "camera" in k:
+                right_observation[k] = v
+                left_observation[k] = v
+            elif "right_" in k :
+                right_observation[k[6:]] = v
+            elif "left_" in k:
+                left_observation[k[5:]] = v
+            else:
+                right_observation[k] = v
+                left_observation[k] = v
+
+        action = replay_sample["action"]
+        right_action, left_action = action.chunk(2, dim=2)
+        right_observation["action"] = right_action
+        left_observation["action"] = left_action
+
+        right_update_dict = self.right_agent.update(step, right_observation)
+        left_update_dict =  self.left_agent.update(step, left_observation)
+
+        total_losses = right_update_dict["total_losses"] + left_update_dict["total_losses"]
+        right_update_dict.update(left_update_dict)
+        right_update_dict["total_losses"] = total_losses
+        return right_update_dict
+    
 
     def act(self, step: int, observation: dict, deterministic: bool) -> ActResult:
 
@@ -142,7 +169,15 @@ class BimanualAgent(Agent):
         self.left_agent.load_weights(savedir.replace("%ROBOT_NAME%", "left"))
 
     def save_weights(self, savedir: str) -> None:
-        raise Exception("not implemented")
+        import os
+        os.makedirs(savedir.replace("%ROBOT_NAME%", "right"), exist_ok=True)
+        os.makedirs(savedir.replace("%ROBOT_NAME%", "left"), exist_ok=True)
+    
+
+        self.right_agent.save_weights(savedir.replace("%ROBOT_NAME%", "right"))
+        self.left_agent.save_weights(savedir.replace("%ROBOT_NAME%", "left"))
+
+
 
 class LeaderFollowerAgent(Agent):
 
@@ -171,6 +206,11 @@ class LeaderFollowerAgent(Agent):
             else:
                 leader_observation[k] = v
                 follower_observation[k] = v
+
+        action = replay_sample["action"]
+        right_action, left_action = action.chunk(2, dim=2)
+        leader_observation["action"] = right_action
+        follower_observation["action"] = left_action
 
         leader_update_dict = self.leader_agent.update(step, leader_observation)
         import torch
