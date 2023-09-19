@@ -28,8 +28,8 @@ ROBOT_STATE_KEYS = ['joint_velocities', 'joint_positions', 'joint_forces',
                         'task_low_dim_state', 'misc', 'left', 'right']
 
 
-
-def _extract_obs_bimanual(obs: BimanualObservation, channels_last: bool, observation_config):
+# ..todo:: possibly duplicated code.
+def _extract_obs_bimanual(obs: BimanualObservation, channels_last: bool, observation_config: ObservationConfig):
     obs_dict = vars(obs)
     obs_dict = {k: v for k, v in obs_dict.items() if v is not None}
 
@@ -41,13 +41,12 @@ def _extract_obs_bimanual(obs: BimanualObservation, channels_last: bool, observa
 
     if not channels_last:
         # Swap channels from last dim to 1st dim
-        obs_dict = {k: np.transpose(
-            v, [2, 0, 1]) if v.ndim == 3 else np.expand_dims(v, 0)
-                    for k, v in obs_dict.items()}
+        obs_dict = {k: np.transpose(v, [2, 0, 1]) if v.ndim == 3 else np.expand_dims(v, 0)
+                    for k, v in obs.perception_data.items() if v is not None}
     else:
         # Add extra dim to depth data
         obs_dict = {k: v if v.ndim == 3 else np.expand_dims(v, -1)
-                    for k, v in obs_dict.items()}
+                    for k, v in obs.perception_data.items() if v is not None}
         
     if observation_config.robot_name == 'right':
         obs_dict['low_dim_state'] = right_robot_state.astype(np.float32)
@@ -62,17 +61,13 @@ def _extract_obs_bimanual(obs: BimanualObservation, channels_last: bool, observa
         obs_dict['left_ignore_collisions'] = np.array([obs.left.ignore_collisions], dtype=np.float32)
 
     for (k, v) in [(k, v) for k, v in obs_dict.items() if 'point_cloud' in k]:
-        obs_dict[k] = v.astype(np.float32)
+        # ..TODO:: 
+        obs_dict[k] = v.astype(np.float16)
 
-    for config, name in [
-        (observation_config.left_shoulder_camera, 'left_shoulder'),
-        (observation_config.right_shoulder_camera, 'right_shoulder'),
-        (observation_config.front_camera, 'front'),
-        (observation_config.wrist_camera, 'wrist'),
-        (observation_config.overhead_camera, 'overhead')]:
+    for camera_name, config in observation_config.camera_configs.items():
         if config.point_cloud:
-            obs_dict['%s_camera_extrinsics' % name] = obs.misc['%s_camera_extrinsics' % name]
-            obs_dict['%s_camera_intrinsics' % name] = obs.misc['%s_camera_intrinsics' % name]
+            obs_dict[f'{camera_name}_camera_extrinsics'] = obs.misc[f'{camera_name}_camera_extrinsics']
+            obs_dict[f'{camera_name}_camera_intrinsics'] = obs.misc[f'{camera_name}_camera_intrinsics']
     return obs_dict
     
 
