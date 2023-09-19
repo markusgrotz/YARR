@@ -165,18 +165,12 @@ class BimanualAgent(Agent):
         return self.right_agent.act_summaries() + self.left_agent.act_summaries()
     
     def load_weights(self, savedir: str) -> None:
-        self.right_agent.load_weights(savedir.replace("%ROBOT_NAME%", "right"))
-        self.left_agent.load_weights(savedir.replace("%ROBOT_NAME%", "left"))
+        self.right_agent.load_weights(savedir)
+        self.left_agent.load_weights(savedir)
 
     def save_weights(self, savedir: str) -> None:
-        import os
-        os.makedirs(savedir.replace("%ROBOT_NAME%", "right"), exist_ok=True)
-        os.makedirs(savedir.replace("%ROBOT_NAME%", "left"), exist_ok=True)
-    
-
-        self.right_agent.save_weights(savedir.replace("%ROBOT_NAME%", "right"))
-        self.left_agent.save_weights(savedir.replace("%ROBOT_NAME%", "left"))
-
+        self.right_agent.save_weights(savedir)
+        self.left_agent.save_weights(savedir)
 
 
 class LeaderFollowerAgent(Agent):
@@ -288,14 +282,9 @@ class LeaderFollowerAgent(Agent):
         return self.leader_agent.act_summaries() + self.follower_agent.act_summaries()
 
     def load_weights(self, savedir: str) -> None:
-        self.leader_agent.load_weights(savedir.replace("%ROBOT_NAME%", "leader"))
-        self.follower_agent.load_weights(savedir.replace("%ROBOT_NAME%", "follower"))
+        self.leader_agent.load_weights(savedir)
+        self.follower_agent.load_weights(savedir)
 
     def save_weights(self, savedir: str) -> None:
-        import os
-        os.makedirs(savedir.replace("%ROBOT_NAME%", "leader"), exist_ok=True)
-        os.makedirs(savedir.replace("%ROBOT_NAME%", "follower"), exist_ok=True)
-        self.leader_agent.save_weights(savedir.replace("%ROBOT_NAME%", "leader"))
- 
-        self.follower_agent.save_weights(savedir.replace("%ROBOT_NAME%", "follower"))
-
+        self.leader_agent.save_weights(savedir)
+        self.follower_agent.save_weights(savedir)
