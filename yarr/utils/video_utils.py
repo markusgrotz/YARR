@@ -48,7 +48,7 @@ class TaskRecorder(object):
             (self._cam_motion.cam.capture_rgb() * 255.).astype(np.uint8))
 
     def save(self, path, lang_goal, reward):
-        print('Converting to video ...')
+        print(f"Converting to video ... {path}")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         # OpenCV QT version can conflict with PyRep, so import here
         import cv2
@@ -56,6 +56,7 @@ class TaskRecorder(object):
         video = cv2.VideoWriter(
                 path, cv2.VideoWriter_fourcc('m', 'p', '4', 'v'), self._fps,
                 tuple(image_size))
+        
         for image in self._current_snaps:
             frame = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
@@ -63,12 +64,16 @@ class TaskRecorder(object):
             font_scale = (0.45 * image_size[0]) / 640
             font_thickness = 2
 
-            lang_textsize = cv2.getTextSize(lang_goal, font, font_scale, font_thickness)[0]
-            lang_textX = (image_size[0] - lang_textsize[0]) // 2
 
-            frame = cv2.putText(frame, lang_goal, org=(lang_textX, image_size[1] - 35),
-                                fontScale=font_scale, fontFace=font, color=(0, 0, 0),
-                                thickness=font_thickness, lineType=cv2.LINE_AA)
+            if lang_goal:
+
+                lang_textsize = cv2.getTextSize(lang_goal, font, font_scale, font_thickness)[0]
+                lang_textX = (image_size[0] - lang_textsize[0]) // 2
+
+                frame = cv2.putText(frame, lang_goal, org=(lang_textX, image_size[1] - 35),
+                                    fontScale=font_scale, fontFace=font, color=(0, 0, 0),
+                                    thickness=font_thickness, lineType=cv2.LINE_AA)
+                
 
             video.write(frame)
         video.release()
