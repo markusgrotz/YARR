@@ -86,6 +86,7 @@ class BimanualAgent(Agent):
     def __init__(self, right_agent: Agent, left_agent: Agent):
         self.right_agent = right_agent
         self.left_agent = left_agent
+        self._summaries = {}
 
     def build(self, training: bool, device=None) -> None:
         self.right_agent.build(training, device)
@@ -116,9 +117,8 @@ class BimanualAgent(Agent):
         left_update_dict =  self.left_agent.update(step, left_observation)
 
         total_losses = right_update_dict["total_losses"] + left_update_dict["total_losses"]
-        right_update_dict.update(left_update_dict)
-        right_update_dict["total_losses"] = total_losses
-        return right_update_dict
+        self._summaries.update({"total_losses": total_losses})
+        return self._summaries
     
 
     def act(self, step: int, observation: dict, deterministic: bool) -> ActResult:
@@ -159,10 +159,38 @@ class BimanualAgent(Agent):
         self.left_agent.reset()
 
     def update_summaries(self) -> List[Summary]:
-        return self.right_agent.update_summaries() + self.left_agent.update_summaries()
+        summaries = []
+        for k, v in self._summaries.items():
+            summaries.append(ScalarSummary(f"{k}", v))
+
+        right_summaries = self.right_agent.update_summaries() 
+        left_summaries =  self.left_agent.update_summaries()
+        
+        for summary in right_summaries:
+            if not isinstance(summary, ImageSummary):
+                summary.name = f"agent_right/{summary.name}"
+
+        for summary in left_summaries:
+            if not isinstance(summary, ImageSummary):
+                summary.name = f"agent_left/{summary.name}"
+
+        return right_summaries + left_summaries + summaries
+
 
     def act_summaries(self) -> List[Summary]:
-        return self.right_agent.act_summaries() + self.left_agent.act_summaries()
+        right_summaries = self.right_agent.act_summaries() 
+        left_summaries =  self.left_agent.act_summaries()
+
+        for summary in right_summaries:
+            if not isinstance(summary, ImageSummary):
+                summary.name = f"agent_right/{summary.name}"
+
+        for summary in left_summaries:
+            if not isinstance(summary, ImageSummary):
+                summary.name = f"agent_left/{summary.name}"
+
+        return right_summaries + left_summaries
+
     
     def load_weights(self, savedir: str) -> None:
         self.right_agent.load_weights(savedir)
@@ -178,6 +206,7 @@ class LeaderFollowerAgent(Agent):
     def __init__(self, leader_agent: Agent, follower_agent: Agent):
         self.leader_agent = leader_agent
         self.follower_agent = follower_agent
+        self._summaries = {}
 
     def build(self, training: bool, device=None) -> None:
         self.leader_agent.build(training, device)
@@ -216,8 +245,8 @@ class LeaderFollowerAgent(Agent):
         follower_update_dict = self.follower_agent.update(step, follower_observation)
 
         total_losses = leader_update_dict["total_losses"] + follower_update_dict["total_losses"]
-        leader_update_dict["total_losses"] = total_losses
-        return leader_update_dict
+        self._summaries.update({"total_losses": total_losses})
+        return self._summaries
  
     def act(self, step: int, observation: dict, deterministic: bool) -> ActResult:
 
@@ -276,10 +305,36 @@ class LeaderFollowerAgent(Agent):
         self.follower_agent.reset()
 
     def update_summaries(self) -> List[Summary]:
-        return self.leader_agent.update_summaries() + self.follower_agent.update_summaries()
+
+        summaries = []
+        for k, v in self._summaries.items():
+            summaries.append(ScalarSummary(f"{k}", v))
+
+        leader_summaries = self.leader_agent.update_summaries() 
+        follower_summaries =  self.follower_agent.update_summaries()
+
+        for summary in leader_summaries:
+            if not isinstance(summary, ImageSummary):
+                summary.name = f"agent_leader/{summary.name}"
+        for summary in follower_summaries:
+            if not isinstance(summary, ImageSummary):
+                summary.name = f"agent_follower/{summary.name}"
+
+        return leader_summaries + follower_summaries + summaries
+        
 
     def act_summaries(self) -> List[Summary]:
-        return self.leader_agent.act_summaries() + self.follower_agent.act_summaries()
+        leader_summaries = self.leader_agent.act_summaries() 
+        follower_summaries =  self.follower_agent.act_summaries()
+
+        for summary in leader_summaries:
+            if not isinstance(summary, ImageSummary):
+                summary.name = f"agent_leader/{summary.name}"
+        for summary in follower_summaries:
+            if not isinstance(summary, ImageSummary):
+                summary.name = f"agent_follower/{summary.name}"
+
+        return leader_summaries + follower_summaries
 
     def load_weights(self, savedir: str) -> None:
         self.leader_agent.load_weights(savedir)
