@@ -94,7 +94,13 @@ class OfflineTrainRunner():
             return starting_epoch
 
     def start(self):
-        logging.getLogger().setLevel(self._logging_level)
+
+        if hasattr(self, "_on_thread_start"):
+            self._on_thread_start()
+        else:
+            logging.getLogger().setLevel(self._logging_level)
+         
+
         self._agent = copy.deepcopy(self._agent)
         self._agent.build(training=True, device=self._train_device)
 

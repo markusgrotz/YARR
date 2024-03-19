@@ -78,6 +78,10 @@ class IndependentEnvRunner(EnvRunner):
               device_idx,
               save_metrics,
               cinematic_recorder_cfg):
+
+        if hasattr(self, "_on_thread_start"):
+            self._on_thread_start()
+            
         multi_task = isinstance(env_config[0], list)
         if multi_task:
             eval_env = CustomMultiTaskRLBenchEnv(
